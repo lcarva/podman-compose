@@ -702,6 +702,13 @@ class Podman:
             time.sleep(sleep)
         return p
 
+    def volume_inspect_all(self):
+        output = self.output(["volume", "inspect", "--all"]).decode('utf-8')
+        return json.loads(output)
+
+    def volume_rm(self, name):
+        return self.run(["volume", "rm", name])
+
 def normalize_service(service):
     for key in ("env_file", "security_opt"):
         if key not in service: continue
@@ -893,7 +900,7 @@ class PodmanCompose:
         if services is None:
             services = {}
             print("WARNING: No services defined")
-		
+
         # NOTE: maybe add "extends.service" to _deps at this stage
         flat_deps(services, with_extends=True)
         service_names = sorted([ (len(srv["_deps"]), name) for name, srv in services.items() ])
@@ -1167,6 +1174,12 @@ def compose_down(compose, args):
         compose.podman.run(["rm", cnt["name"]], sleep=0)
     for pod in compose.pods:
         compose.podman.run(["pod", "rm", pod["name"]], sleep=0)
+    if args.volumes:
+        volumes = compose.podman.volume_inspect_all()
+        for volume in volumes:
+            project = volume.get("Labels", {}).get("io.podman.compose.project")
+            if project == compose.project_name:
+                compose.podman.volume_rm(volume["Name"])
 
 @cmd_run(podman_compose, 'ps', 'show status of containers')
 def compose_ps(compose, args):
@@ -1297,6 +1310,12 @@ def compose_up_parse(parser):
         help="Return the exit code of the selected service container. Implies --abort-on-container-exit.")
     parser.add_argument('services', metavar='SERVICES', nargs='*',
         help='service names to start')
+
+@cmd_parse(podman_compose, 'down')
+def compose_down_parse(parser):
+    parser.add_argument("-v", "--volumes", action='store_true', default=False,
+        help="Remove named volumes declared in the `volumes` section of the Compose file and "
+             "anonymous volumes attached to containers.")
 
 @cmd_parse(podman_compose, 'run')
 def compose_run_parse(parser):
